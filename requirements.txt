@@ -2,3 +2,5 @@ httpx
 bs4
 pillow
 aiofiles
+typer
+rich
