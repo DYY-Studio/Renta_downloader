@@ -142,6 +142,7 @@ class RentaTaiwanDiscountTitle:
     @dataclass 
     class RentalInfo:
         status: int
+        expired_at: int | None = None
     
     title_id: int
     series_id:int
@@ -443,16 +444,27 @@ class RentaTaiwanClient:
         )
         res.raise_for_status()
         
+        jump_url = ''
+
         script_start = res.text.find('<script type="text/javascript">const checkIsInFlutter')
         if not script_start >= 0:
-            return
-        script = res.text[script_start:]
+            res = await self.client.get(
+                f'https://tw.myrenta.com/read/{tid}/1',
+                follow_redirects=True
+            )
+            res.raise_for_status()
+            if 'view2_auth' in res.url or 'viewer.myrenta.com/reading/' in res.url or '/read/video/'  in res.url:
+                jump_url = res.url
+            else:
+                return
+        else:
+            script = res.text[script_start:]
 
-        location = re.search(r"location.replace\('(.+?)'\);", script)
-        if not location:
-            return
+            location = re.search(r"location.replace\('(.+?)'\);", script)
+            if not location:
+                return
 
-        jump_url = location.group(1)
+            jump_url = location.group(1)
 
         if 'view2_auth' in jump_url:
             res = await self.client.get(
@@ -786,7 +798,8 @@ if __name__ == "__main__":
 
     CONFIG_FILE = Path('renta_taiwan_config.json')
     global_config = {
-        'proxy': None
+        'proxy_web': None,
+        'proxy_mobile': None
     }
 
     def save_cookies(jar: cookiejar.CookieJar):
@@ -803,16 +816,37 @@ if __name__ == "__main__":
         global global_config
         if CONFIG_FILE.exists():
             with open(CONFIG_FILE, mode='r', encoding='utf-8') as f:
-                global_config = json.load(f)
+                global_config.update(json.load(f))
 
-    @app.command(help='Set global proxy')
-    def config(proxy: str = typer.Argument(help='Your proxy URL')):
-        try:
-            httpx.URL(proxy)
-            global_config['proxy'] = proxy
+    @web_app.command(help='Set web proxy')
+    def config(proxy: str | None = typer.Argument(None, help='Your proxy URL')):
+        if not proxy:
+            load_config()
+            del global_config['proxy_web']
             save_config()
-        except:
-            raise
+        else:
+            try:
+                load_config()
+                httpx.URL(proxy)
+                global_config['proxy_web'] = proxy
+                save_config()
+            except:
+                raise
+
+    @mobile_app.command(help='Set web proxy')
+    def config(proxy: str | None = typer.Argument(None, help='Your proxy URL')):
+        if not proxy:
+            load_config()
+            del global_config['proxy_mobile']
+            save_config()
+        else:
+            try:
+                load_config()
+                httpx.URL(proxy)
+                global_config['proxy_mobile'] = proxy
+                save_config()
+            except:
+                raise
 
     @web_app.command()
     def login(
@@ -823,7 +857,7 @@ if __name__ == "__main__":
     ):
         async def _internal():
             load_config()
-            client = RentaTaiwanClient(proxy=global_config.get('proxy'))
+            client = RentaTaiwanClient(proxy=global_config.get('proxy_web'))
             succ = await client.login_web(email, password)
             if succ:
                 succ = await client.check_login_web()
@@ -848,7 +882,7 @@ if __name__ == "__main__":
             if COOKIE_CACHE_FILE.exists():
                 COOKIE_CACHE.load()
             load_config()
-            client = RentaTaiwanClient(cookies=COOKIE_CACHE, proxy=global_config.get('proxy'))
+            client = RentaTaiwanClient(cookies=COOKIE_CACHE, proxy=global_config.get('proxy_web'))
             succ = await client.check_login_web()
             if succ:
                 console.print('[green]Login success[/green]')
@@ -871,7 +905,7 @@ if __name__ == "__main__":
             if COOKIE_CACHE_FILE.exists():
                 COOKIE_CACHE.load()
             load_config()
-            client = RentaTaiwanClient(cookies=COOKIE_CACHE, proxy=global_config.get('proxy'))
+            client = RentaTaiwanClient(cookies=COOKIE_CACHE, proxy=global_config.get('proxy_web'))
 
             res = await client.get_title_list(series_id)
             if not res:
@@ -906,11 +940,11 @@ if __name__ == "__main__":
                     f"{buy_plan.final_price * 10} TWD\n"
                     f"{(str(rent_plan.final_price * 10) + ' TWD') if rent_plan.final_price >= 0 else 'NoRent'}",
                     style={
-                        3: 'green',
-                        2: '',
-                        1: '',
+                        3: 'bold green',
+                        2: 'green',
+                        1: 'green',
                         0: ''
-                    }[discount[prd.tid].rentalInfo.status] or 'yellow' if not (buy_plan.final_price or rent_plan.final_price) else ''
+                    }[discount[prd.tid].rentalInfo.status] or 'yellow' if (buy_plan.final_price == 0 or rent_plan.final_price == 0) else ''
                 )
             console.print(table)
             save_cookies(client.client.cookies.jar)
@@ -942,7 +976,7 @@ if __name__ == "__main__":
             if COOKIE_CACHE_FILE.exists():
                 COOKIE_CACHE.load()
             load_config()
-            client = RentaTaiwanClient(cookies=COOKIE_CACHE, proxy=global_config.get('proxy'))
+            client = RentaTaiwanClient(cookies=COOKIE_CACHE, proxy=global_config.get('proxy_web'))
             succ = await client.check_login_web()
             if not succ:
                 console.print('[red]Login required[/red]')
@@ -982,7 +1016,7 @@ if __name__ == "__main__":
     ):
         async def _internal():
             load_config()
-            client = RentaTaiwanClient(proxy=global_config.get('proxy'), mobile=True)
+            client = RentaTaiwanClient(proxy=global_config.get('proxy_mobile'), mobile=True)
             succ = await client.login_mobile(email, password)
             if succ:
                 succ = await client.check_login_mobile()
@@ -1002,7 +1036,7 @@ if __name__ == "__main__":
     def login_check_mobile():
         async def _internal():
             load_config()
-            client = RentaTaiwanClient(proxy=global_config.get('proxy'), mobile=True)
+            client = RentaTaiwanClient(proxy=global_config.get('proxy_mobile'), mobile=True)
             succ = await client.check_login_mobile()
             if succ:
                 console.print('[green]Login success[/green]')
@@ -1022,7 +1056,7 @@ if __name__ == "__main__":
 
         async def _internal():
             load_config()
-            client = RentaTaiwanClient(proxy=global_config.get('proxy'), mobile=True)
+            client = RentaTaiwanClient(proxy=global_config.get('proxy_mobile'), mobile=True)
 
             succ = await client.check_login_mobile()
             if not succ:
@@ -1035,7 +1069,7 @@ if __name__ == "__main__":
                 return
 
             table = Table(
-                "NO.", "TID", "Title", "Price",
+                "NO.", "TID", "Title", "Buy", "48h",
                 title=res.name,
                 show_lines=True,
                 caption='[green]Green[/green]: Bought\n[yellow]Yellow[/yellow]: Free'
@@ -1045,9 +1079,10 @@ if __name__ == "__main__":
                     str(prd.vol_no), 
                     str(prd.id), 
                     prd.name, 
-                    f"{(prd.sale_price_buy if prd.sale_price_buy >= 0 else prd.sale_price_48h) / 100:.1f}",
+                    f"{prd.sale_price_buy / 10:.1f} TWD" if prd.sale_price_buy >= 0 else 'X',
+                    f"{prd.sale_price_48h / 10:.1f} TWD" if prd.sale_price_48h >= 0 else 'X',
                     style='green' if prd.return_dt and datetime.now(UTC) < datetime.fromisoformat(prd.return_dt + '+00:00') else (
-                        'yellow' if prd.is_free or prd.is_vip_free else ''
+                        'yellow' if prd.is_free or prd.is_vip_free or prd.sale_price_48h == 0 or prd.sale_price_buy == 0 else ''
                     )
                 )
             console.print(table)
@@ -1067,7 +1102,7 @@ if __name__ == "__main__":
         
         async def _internal():
             load_config()
-            client = RentaTaiwanClient(proxy=global_config.get('proxy'), mobile=True)
+            client = RentaTaiwanClient(proxy=global_config.get('proxy_mobile'), mobile=True)
             succ = await client.check_login_mobile()
             if not succ:
                 console.print('[red]Login required[/red]')

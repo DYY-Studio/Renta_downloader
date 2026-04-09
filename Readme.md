@@ -39,6 +39,13 @@
    python renta_japan.py --help # Renta! Japan
    python renta_taiwan.py --help # Renta! Taiwan
    ```
+5. 附加组件
+   ```shell
+   # 如果需要在Renta! Taiwan下载动画
+   # 则需要安装streamlink或yt-dlp
+   pip install streamlink # streamlink
+   pip install yt-dlp # yt-dlp
+   ```
 
 ## 指令
 ### login
