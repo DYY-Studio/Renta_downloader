@@ -5,6 +5,8 @@
 * 模拟iOS客户端
 * 下载完整的ePub文件
 * 将漫画重封装为CBZ
+* 下载动漫与音声（Renta! Taiwan）
+* 下载絵ノベル并封装为ePub文件
 * 异步并发下载
 
 ## 支持商店地区
@@ -113,6 +115,7 @@ python renta_client.py series 123456
   | 租借/购入 | 文学 | view_pack | ePub（完整） |
   | 免费 | 纯图像 | view_jsimg5 | CBZ（非原图）| 
   | 租借/购入 | 纯图像 | view_pack | CBZ（原图）|
+  | Any | 絵ノベル | view_novel | ePub（合成） |
 
 * Renta! Taiwan 
 
