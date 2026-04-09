@@ -43,7 +43,7 @@
    ```
 5. 附加组件
    ```shell
-   # 如果需要在Renta! Taiwan下载动画
+   # 如果需要在Renta! Taiwan下载动画和音声
    # 则需要安装streamlink或yt-dlp
    pip install streamlink # streamlink
    pip install yt-dlp # yt-dlp
