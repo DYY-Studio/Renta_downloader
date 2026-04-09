@@ -798,7 +798,7 @@ if __name__ == "__main__":
                 console.print('[red]Login required[/red]')
                 return
             res = await client.get_title_list(series_id)
-            console.print(res.serise, res.title)
+            # console.print(res.serise, res.title)
 
             table = Table(
                 "NO.", "TID", "Title",

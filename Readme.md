@@ -9,7 +9,7 @@
 
 ## 支持商店地区
 - [x] Renta! Japan
-- [ ] Renta! Taiwan
+- [x] Renta! Taiwan
 - [ ] Renta! Global
 
 ## 环境要求
@@ -36,7 +36,8 @@
    ```
 4. 开始使用
    ```shell
-   python renta_client.py --help # 显示帮助
+   python renta_japan.py --help # Renta! Japan
+   python renta_taiwan.py --help # Renta! Taiwan
    ```
 
 ## 指令
@@ -63,7 +64,8 @@
 >
 > （必须登入）
 * series_id
-  * renta.papy.co.jp/renta/sc/frm/item/***123456***
+  * **[Japan]** renta.papy.co.jp/renta/sc/frm/item/***123456***
+  * **[Taiwan]** tw.myrenta.com/item/***123456***
   * 输入这串数字，或直接输入整个URL
 
 用法示例
@@ -80,14 +82,20 @@ python renta_client.py series 123456
 * --output PATH
   * 指定输出文件夹
   * 不指定时默认为`当前工作目录/output`
-* --descramble / --no-descramble
+* **[Japan ONLY]** --descramble / --no-descramble
   * 启用JSImg View的反混淆（**不推荐**，默认为no）
   * 对于免费漫画，Renta只允许使用JSImg View打开
   * 但是该模式下无法获得原图，只有被混淆过的切片图像，JPEG质量70左右，很差
   * 启用该选项后，将拼凑回完整图像，并保存为PNG
-* --proxy URL
+* **[Japan ONLY]** --proxy URL
   * 代理服务器地址
   * Renta! Japan在中国大陆也可直接访问
+
+### [Taiwan ONLY] config
+> 设置全局代理
+>
+> Web可能需要，App基本可以直接连接
+* proxy_url
 
 ## 输出一览表
 * Renta! Japan
@@ -99,7 +107,18 @@ python renta_client.py series 123456
   | 免费 | 纯图像 | view_jsimg5 | CBZ（非原图）| 
   | 租借/购入 | 纯图像 | view_pack | CBZ（原图）|
 
+* Renta! Taiwan 
+
+  | 平台 | 类型 | 输出格式 |
+  | --- | --- | --- |
+  | WEB | 文学 | ePub（逐文件） |
+  | WEB | 纯图像 | CBZ（非原图）| 
+  | WEB | 动画 | MP4（HLS） |
+  | APP | 文学 | ePub（完整） |
+  | APP | 纯图像 | ePub（完整） |
+  | APP | 动画 | 不支持 |
+
 ## TODO
-- [ ] 支持Taiwan站点
+- [x] 支持Taiwan站点
 - [ ] 支持Global站点
 - [ ] 全局PROXY设置
