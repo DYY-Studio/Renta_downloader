@@ -141,7 +141,7 @@ class ENovelEpubBuilder:
     {img_manifest}
     <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav" />
   </manifest>
-  <spine>
+  <spine page-progression-direction="rtl">
     {spine_items}
   </spine>
 </package>"""

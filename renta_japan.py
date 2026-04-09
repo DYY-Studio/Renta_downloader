@@ -309,7 +309,10 @@ class RentaJSImgDescrambler:
         # idx_offset = 0 
 
         # split by metadata
-        for idx, (pos, size) in enumerate(data_ranges):
+        for idx, loc in enumerate(data_ranges):
+            if len(loc) == 1:
+                continue
+            pos, size = loc
             f.seek(meta_length + 9 + pos)
             with io.BytesIO(f.read(size)) as buffer:
                 with Image.open(buffer) as seg_img:
@@ -670,7 +673,7 @@ class RentaJapanClient:
                         yield 'Downloading', len(file_indexes)
                 shutil.rmtree(temp_dir)
 
-        elif allow_descramble and viewer_url.path.startswith('/sc/view_jsimg5/'):
+        elif allow_descramble and re.match(r'/sc/view_(?:js|t)img5/', viewer_url.path):
             if progress:
                 progress.console.print('[yellow bold]Warning[/yellow bold]: Scrambled images are low quality. It\'s highly recommand to turn off this feature.\n\tYou should buy/rent this work to avoid scrambled images.')
             yield 'Metadata', None
@@ -680,21 +683,28 @@ class RentaJapanClient:
 
             soup = BeautifulSoup(res.text, 'lxml')
             script = soup.find_all('script')[-2].text
-            info = re.search(
-                r'prd_ser="([0-9]+)",.*'
-                r'url_base2="(https://.+?)",.*'
-                r'set_page=parseInt\("([0-9]+?)"\),max_page=parseInt\("([0-9]+?)"\).*'
-                r'auth_key="(auth-key=.+?)",.*'
-                r'cache_update="([0-9]+)",', 
-                script
-            )
-            if not info:
+
+            prd_ser = re.search(r'prd_ser ?= ?"([0-9]+)"[,;]', script)
+            set_page = re.search(r'set_page ?= ?parseInt\("([0-9]+?)"\)[,;]', script)
+            max_page = re.search(r'max_page ?= ?parseInt\("([0-9]+?)"\)[,;]', script)
+            auth_key = re.search(r'auth_key ?= ?"(auth-key=.+?)"[,;]', script)
+            cache_update = re.search(r'cache_update ?= ?"([0-9]+)"[,;]', script)
+            url_base2 = re.search(r'url_base2 ?= ?"(https://.+?)"[,;]', script)
+
+            if not all((prd_ser, set_page, max_page, auth_key, cache_update, url_base2, )):
                 yield 'ERROR', None
+            else:
+                prd_ser = prd_ser.group(1)
+                set_page = set_page.group(1)
+                max_page = max_page.group(1)
+                auth_key = auth_key.group(1)
+                cache_update = cache_update.group(1)
+                url_base2 = url_base2.group(1)
             prd_name = re.search(r'const prdName  = "(.+?)";', script).group(1)
 
             def generate_urls():
-                for i in range(int(info.group(3)), int(info.group(4)) + 1):
-                    yield f'{info.group(2)}{i}?date={info.group(6)}&{info.group(5)}&origin=s_dre-viewer.papy.co.jp', i, int(info.group(1))
+                for i in range(int(set_page), int(max_page) + 1):
+                    yield f'{url_base2}{i}?date={cache_update}&{auth_key}&origin=s_dre-viewer.papy.co.jp', i, int(prd_ser)
             
             temp_dir = target_dir / 'temp'
             temp_dir.mkdir(parents=True, exist_ok=True)
