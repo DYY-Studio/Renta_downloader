@@ -453,7 +453,7 @@ class RentaTaiwanClient:
                 follow_redirects=True
             )
             res.raise_for_status()
-            if 'view2_auth' in res.url or 'viewer.myrenta.com/reading/' in res.url or '/read/video/'  in res.url:
+            if 'view2_auth' in str(res.url) or 'viewer.myrenta.com/reading/' in str(res.url) or '/read/video/'  in str(res.url):
                 jump_url = res.url
             else:
                 return
