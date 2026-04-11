@@ -18,6 +18,7 @@ from typing import Literal, Any, AsyncGenerator, Union
 from PIL import Image
 
 from enovel2epub import ENovelEpubBuilder
+from comicinfo import ComicInfoMetadata
 
 def getLegalPath(rawPath: str) -> str:
 
@@ -665,7 +666,18 @@ class RentaJapanClient:
                     asyncio.create_task(get_pack_file(temp_dir, meta.url_dat, meta.ext, *idx)) 
                     for idx in file_indexes
                 )
-                with zipfile.ZipFile(target_dir / f"{getLegalPath(meta.title)}.zip", mode='w') as zf:
+                with zipfile.ZipFile(target_dir / f"{getLegalPath(meta.title)}.{'cbz' if meta.bcg == 'c' else 'zip'}", mode='w') as zf:
+                    if meta.bcg == 'c':
+                        zf.writestr('ComicInfo.xml', ComicInfoMetadata(
+                            Title=meta.title,
+                            Series=meta.series_name,
+                            Genre=meta.genre,
+                            Volume=meta.volume,
+                            Summary=meta.description,
+                            Writer=meta.author,
+                            Manga='Yes',
+                            PageCount=meta.page_max
+                        ).generate_xml())
                     for t in asyncio.as_completed(tasks):
                         name = await t
                         zf.write(temp_dir / name, name)
