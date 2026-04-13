@@ -586,7 +586,7 @@ class RentaJapanClient:
             if opfIdx > -1:
                 async with aiofiles.open(temp_dir / files[opfIdx], mode='r', encoding='utf-8') as f:
                     soup = BeautifulSoup(await f.read(), 'lxml')
-                title_elem = soup.find('dc:title', {'id': 'title'})
+                title_elem = soup.find('dc:title')
                 if title_elem:
                     file_name = f"{getLegalPath(title_elem.text)}.epub"
 
