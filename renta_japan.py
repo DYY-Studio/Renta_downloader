@@ -565,6 +565,19 @@ class RentaJapanClient:
                         zf.write(file, file.relative_to(temp_dir))
                     file.unlink(missing_ok=True)
 
+        if viewer_url.path.startswith('/sc/view_novel/'):
+            # Templately redirect new view to legacy view
+            viewer_res = await self.client.get(viewer_url)
+            viewer_res.raise_for_status()
+            viewer_html = BeautifulSoup(viewer_res.text, 'lxml')
+            if viewer_html.head.title != "Medusa":
+                legacy_viewer = await self.client.get(
+                    str(viewer_url).removesuffix('/viewer/') + "/legacy-viewer",
+                    follow_redirects=True
+                )
+                legacy_viewer.raise_for_status()
+                viewer_url = legacy_viewer.url
+
         if viewer_url.path.startswith('/sc/view_epub2/'):
             files = list()
             temp_dir = target_dir / 'temp'
