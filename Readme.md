@@ -122,7 +122,8 @@ python renta_client.py series 123456
 
   | 购买情况 | 类型 | 下载途径 | 输出格式 |
   | --- | --- | --- | --- |
-  | 免费 | 文学 | view_epub2<br>~~view_novel~~ | ePub（逐文件） |
+  | 免费 | 文学 | view_epub2 | ePub（逐文件） |
+  | 免费 | 文学 | view_novel | ePub（合成） | 
   | 租借/购入 | 文学 | view_pack | ePub（完整） |
   | 免费 | 纯图像 | view_jsimg5 | CBZ（非原图）| 
   | 租借/购入 | 纯图像 | view_pack | CBZ（原图）|
