@@ -19,6 +19,7 @@ from PIL import Image
 
 from enovel2epub import ENovelEpubBuilder
 from comicinfo import ComicInfoMetadata
+from viewnovel2epub import ViewNovelEpubBuilder
 
 def getLegalPath(rawPath: str) -> str:
 
@@ -511,7 +512,8 @@ class RentaJapanClient:
         target_dir: Path, 
         allow_descramble: bool = False, 
         max_workers: int = 8, 
-        progress: Union['Progress', None] = None
+        progress: Union['Progress', None] = None,
+        epub2_redirect: bool = True
     ) -> AsyncGenerator[tuple[str, int | None], None]:
         sem = asyncio.Semaphore(max_workers)
 
@@ -565,19 +567,36 @@ class RentaJapanClient:
                         zf.write(file, file.relative_to(temp_dir))
                     file.unlink(missing_ok=True)
 
+        async def simple_download(url: str, fpath: Path):
+            async with sem:
+                res = await self.client.get(url)
+                res.raise_for_status()
+                fpath.parent.mkdir(parents=True, exist_ok=True)
+                async with aiofiles.open(fpath, mode='wb') as f:
+                    await f.write(res.content)
+
+        viewer_html = None
         if viewer_url.path.startswith('/sc/view_novel/'):
-            # Templately redirect new view to legacy view
+            # Redirect new view to legacy view
             viewer_res = await self.client.get(viewer_url)
             viewer_res.raise_for_status()
             viewer_html = BeautifulSoup(viewer_res.text, 'lxml')
             if viewer_html.head.title != "Medusa":
-                legacy_viewer = await self.client.get(
-                    str(viewer_url).removesuffix('/viewer/') + "/legacy-viewer",
-                    follow_redirects=True
-                )
-                legacy_viewer.raise_for_status()
-                viewer_url = legacy_viewer.url
+                if epub2_redirect:
+                    script = viewer_html.body.script.text
+                    oldViewerUrl = re.search(r'oldViewerUrl ?= ?"(.*?/.+?)"[,;]', script)
 
+                    if oldViewerUrl:
+                        legacy_viewer = await self.client.get(
+                            f"{viewer_url.scheme}://{viewer_url.host}{oldViewerUrl.group(1)}",
+                        )
+                        if legacy_viewer.status_code != 302:
+                            legacy_viewer.raise_for_status()
+                        if legacy_viewer.status_code == 200:
+                            raise RuntimeError("Cannot redirect to legacy viewer")
+                        viewer_url = httpx.URL(legacy_viewer.headers.get('location'))
+                        viewer_html = None
+                    
         if viewer_url.path.startswith('/sc/view_epub2/'):
             files = list()
             temp_dir = target_dir / 'temp'
@@ -698,7 +717,7 @@ class RentaJapanClient:
                         yield 'Downloading', len(file_indexes)
                 shutil.rmtree(temp_dir)
 
-        elif allow_descramble and re.match(r'/sc/view_(?:js|t)img5/', viewer_url.path):
+        elif allow_descramble and re.match(r'/sc/view_(?:js|t)img[25]/', viewer_url.path):
             if progress:
                 progress.console.print('[yellow bold]Warning[/yellow bold]: Scrambled images are low quality. It\'s highly recommand to turn off this feature.\n\tYou should buy/rent this work to avoid scrambled images.')
             yield 'Metadata', None
@@ -760,7 +779,58 @@ class RentaJapanClient:
             
             shutil.rmtree(temp_dir)
 
-        elif viewer_url.path.startswith('/sc/view_novel'):
+        elif viewer_html and viewer_url.path.startswith('/sc/view_novel'):
+            script = viewer_html.body.script.text
+
+            CDN_URL = re.search(r'CDN_URL ?= ?"(https://.+?)"[,;]', script)
+            CDN_DATA_URL = re.search(r'CDN_DATA_URL ?= ?"(https://.+?)"[,;]', script)
+
+            if all((CDN_URL, CDN_DATA_URL, )):
+                CDN_URL = CDN_URL.group(1)
+                CDN_DATA_URL = CDN_DATA_URL.group(1)
+            else:
+                raise RuntimeError()
+
+            yield 'Body', 2
+            data = await self.client.get(CDN_DATA_URL)
+            yield 'Body', 2
+            contents = await self.client.get(f"{viewer_url}contents")
+            yield 'Body', 2
+
+            temp_dir = target_dir / 'temp'
+            temp_dir.mkdir(parents=True, exist_ok=True)
+
+            yield 'Build', None
+            data_json = data.json()
+            img_mapping = await ViewNovelEpubBuilder.build(
+                data_json, contents.json(), self.client.cookies.get('USC1'), temp_dir
+            )
+
+            yield 'Images', 0
+            tasks = [
+                asyncio.create_task(
+                    simple_download(CDN_URL + f'images/{name}', fpath)
+                ) 
+                for name, fpath in img_mapping.items()
+            ]
+            yield 'Images', len(tasks)
+            for t in asyncio.as_completed(tasks):
+                await t
+                yield 'Images', len(tasks)
+
+            yield 'Packing', None
+            output_name = f"{getLegalPath(data_json['title'])}.epub"
+            temp_dir = temp_dir / 'build'
+            await asyncio.to_thread(
+                zip_epub, target_dir / output_name,
+                [
+                    f for f in temp_dir.glob('**/*') 
+                    if f.is_file()
+                ]
+            )
+            shutil.rmtree(temp_dir.parent)
+
+        elif not viewer_html and viewer_url.path.startswith('/sc/view_novel'):
             url = list(urlsplit(str(viewer_url)))
             url[2] = '/'.join(url[2].strip('/').split('/')[:5])
             base_url = urlunsplit(url).rstrip('/')
@@ -779,14 +849,6 @@ class RentaJapanClient:
             
             temp_dir = target_dir / 'temp'
             temp_dir.mkdir(parents=True, exist_ok=True)
-
-            async def simple_download(url: str, fpath: Path):
-                async with sem:
-                    res = await self.client.get(url)
-                    res.raise_for_status()
-                    fpath.parent.mkdir(parents=True, exist_ok=True)
-                    async with aiofiles.open(fpath, mode='wb') as f:
-                        await f.write(res.content)
                 
             yield 'Generate', None
             builder = ENovelEpubBuilder(
@@ -917,6 +979,7 @@ if __name__ == "__main__":
         ),
         output: Path = typer.Option(Path.cwd() / 'output', help='Dir for saving files'),
         descramble: bool = typer.Option(False, help='Enable descrambling for free mangas\' JSImg5 View (Not recommended)'),
+        legacy_web: bool = typer.Option(True, help='request legacy viewer for free novels to get accurate ePub file'),
         proxy: str | None = typer.Option(None, help='Proxy for download')
     ):
         if (result := re.search(r"renta.papy.co.jp/renta/sc/frm/item/([0-9]+)/?", series_id)):
@@ -963,7 +1026,7 @@ if __name__ == "__main__":
                         continue
                     
                     async for desc, total in client.download(
-                        viewer_url, output, allow_descramble=descramble, progress=progress
+                        viewer_url, output, allow_descramble=descramble, progress=progress, epub2_redirect=legacy_web
                     ):
                         task = progress._tasks[task_id]
                         if task.description != desc:
