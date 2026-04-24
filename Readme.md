@@ -92,10 +92,21 @@ python renta_client.py series 123456
   * 指定输出文件夹
   * 不指定时默认为`当前工作目录/output`
 * **[Japan ONLY]** --descramble / --no-descramble
-  * 启用JSImg View的反混淆（**不推荐**，默认为no）
-  * 对于免费漫画，Renta只允许使用JSImg View打开
-  * 但是该模式下无法获得原图，只有被混淆过的切片图像，JPEG质量70左右，很差
-  * 启用该选项后，将拼凑回完整图像，并保存为PNG
+  * 启用JSImg View的反混淆
+  * **不推荐**，默认为 `--no-descramble`
+  ```plaintext
+  对于免费漫画，Renta只允许使用JSImg View打开
+  但是该模式下无法获得原图，只有被混淆过的切片图像，JPEG质量70左右，很差
+  启用该选项后，将拼凑回完整图像，并保存为PNG
+  ```
+* **[Japan ONLY]** --legacy-web / --no-legacy-web
+  * 阅读免费文学作品时，使用传统Web端ePub阅读器 (view_epub2) 而非新阅读器 (view_novel)
+  * **推荐**，默认为 `--legacy-web`
+  ```plaintext
+  传统阅读器可以获取完整的ePub文件，与购买后下载的一致
+  新阅读器无法定位CSS文件，不能保证所有Style均一致
+  目前新阅读器的ePub重组功能仍是实验性的
+  ```
 * **[Japan ONLY]** --proxy URL
   * 代理服务器地址
   * Renta! Japan在中国大陆也可直接访问
