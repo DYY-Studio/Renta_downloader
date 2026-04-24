@@ -600,34 +600,38 @@ class RentaJapanClient:
         if viewer_url.path.startswith('/sc/view_epub2/'):
             files = list()
             temp_dir = target_dir / 'temp'
-            yield 'Metadata', None
-            meta = await get_epub_file(temp_dir, 0, False)
-            # files.add(meta.relpath)
+            try:
+                yield 'Metadata', None
+                meta = await get_epub_file(temp_dir, 0, False)
+                # files.add(meta.relpath)
 
-            opfIdx = -1
-            tasks = set(asyncio.create_task(get_epub_file(temp_dir, idx)) for idx in range(1, meta.total))
-            yield 'Downloading', len(tasks)
-            for t in asyncio.as_completed(tasks):
-                meta = await t
-                files.append(meta.relpath)
-                if meta.relpath.lower().endswith('.opf'):
-                    opfIdx = len(files) - 1
+                opfIdx = -1
+                tasks = set(asyncio.create_task(get_epub_file(temp_dir, idx)) for idx in range(1, meta.total))
                 yield 'Downloading', len(tasks)
+                for t in asyncio.as_completed(tasks):
+                    meta = await t
+                    files.append(meta.relpath)
+                    if meta.relpath.lower().endswith('.opf'):
+                        opfIdx = len(files) - 1
+                    yield 'Downloading', len(tasks)
 
-            file_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f.epub")
-            if opfIdx > -1:
-                async with aiofiles.open(temp_dir / files[opfIdx], mode='r', encoding='utf-8') as f:
-                    soup = BeautifulSoup(await f.read(), 'lxml')
-                title_elem = soup.find('dc:title')
-                if title_elem:
-                    file_name = f"{getLegalPath(title_elem.text)}.epub"
+                file_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f.epub")
+                if opfIdx > -1:
+                    async with aiofiles.open(temp_dir / files[opfIdx], mode='r', encoding='utf-8') as f:
+                        soup = BeautifulSoup(await f.read(), 'lxml')
+                    title_elem = soup.find('dc:title')
+                    if title_elem:
+                        file_name = f"{getLegalPath(title_elem.text)}.epub"
 
-            yield 'Packing', None
-            await asyncio.to_thread(
-                zip_epub, target_dir / file_name, [temp_dir / file for file in files]
-            )
-
-            shutil.rmtree(temp_dir)
+                yield 'Packing', None
+                await asyncio.to_thread(
+                    zip_epub, target_dir / file_name, [temp_dir / file for file in files]
+                )
+            except:
+                shutil.rmtree(temp_dir)
+                raise
+            finally:
+                shutil.rmtree(temp_dir)
 
         elif viewer_url.path.startswith('/sc/view_pack/'):
             yield 'Metadata', None
@@ -753,31 +757,35 @@ class RentaJapanClient:
             temp_dir = target_dir / 'temp'
             temp_dir.mkdir(parents=True, exist_ok=True)
 
-            self.client.headers['Origin'] = 'https://dre-viewer.papy.co.jp'
-            self.client.headers['Referer'] = 'https://dre-viewer.papy.co.jp/'
+            try:
+                self.client.headers['Origin'] = 'https://dre-viewer.papy.co.jp'
+                self.client.headers['Referer'] = 'https://dre-viewer.papy.co.jp/'
 
-            tasks = [
-                asyncio.create_task(get_jsimg_file(temp_dir, *params)) 
-                for params in generate_urls()
-            ]
-            yield 'Download', len(tasks)
-            files: list[Path] = []
-            for t in asyncio.as_completed(tasks):
-                files.append(await t)
+                tasks = [
+                    asyncio.create_task(get_jsimg_file(temp_dir, *params)) 
+                    for params in generate_urls()
+                ]
                 yield 'Download', len(tasks)
+                files: list[Path] = []
+                for t in asyncio.as_completed(tasks):
+                    files.append(await t)
+                    yield 'Download', len(tasks)
 
-            self.client.headers.pop('Origin')
-            self.client.headers.pop('Referer')
+                self.client.headers.pop('Origin')
+                self.client.headers.pop('Referer')
 
-            yield 'Packing', None
-            def pack_cbz(files: list[Path], target: Path):
-                with zipfile.ZipFile(target.with_suffix('.cbz'), mode='w', compression=zipfile.ZIP_STORED) as zf:
-                    for file in files:
-                        zf.write(file, file.relative_to(temp_dir))
-            
-            await asyncio.to_thread(pack_cbz, files, target_dir / f'{getLegalPath(prd_name)}_jsimg')
-            
-            shutil.rmtree(temp_dir)
+                yield 'Packing', None
+                def pack_cbz(files: list[Path], target: Path):
+                    with zipfile.ZipFile(target.with_suffix('.cbz'), mode='w', compression=zipfile.ZIP_STORED) as zf:
+                        for file in files:
+                            zf.write(file, file.relative_to(temp_dir))
+                
+                await asyncio.to_thread(pack_cbz, files, target_dir / f'{getLegalPath(prd_name)}_jsimg')
+            except:
+                shutil.rmtree(temp_dir)
+                raise
+            finally:    
+                shutil.rmtree(temp_dir)
 
         elif viewer_html and viewer_url.path.startswith('/sc/view_novel'):
             script = viewer_html.body.script.text
@@ -800,35 +808,40 @@ class RentaJapanClient:
             temp_dir = target_dir / 'temp'
             temp_dir.mkdir(parents=True, exist_ok=True)
 
-            yield 'Build', None
-            data_json = data.json()
-            img_mapping = await ViewNovelEpubBuilder.build(
-                data_json, contents.json(), self.client.cookies.get('USC1'), temp_dir
-            )
+            try:
+                yield 'Build', None
+                data_json = data.json()
+                img_mapping = await ViewNovelEpubBuilder.build(
+                    data_json, contents.json(), self.client.cookies.get('USC1'), temp_dir
+                )
 
-            yield 'Images', 0
-            tasks = [
-                asyncio.create_task(
-                    simple_download(CDN_URL + f'images/{name}', fpath)
-                ) 
-                for name, fpath in img_mapping.items()
-            ]
-            yield 'Images', len(tasks)
-            for t in asyncio.as_completed(tasks):
-                await t
-                yield 'Images', len(tasks)
-
-            yield 'Packing', None
-            output_name = f"{getLegalPath(data_json['title'])}.epub"
-            temp_dir = temp_dir / 'build'
-            await asyncio.to_thread(
-                zip_epub, target_dir / output_name,
-                [
-                    f for f in temp_dir.glob('**/*') 
-                    if f.is_file()
+                yield 'Images', 0
+                tasks = [
+                    asyncio.create_task(
+                        simple_download(CDN_URL + f'images/{name}', fpath)
+                    ) 
+                    for name, fpath in img_mapping.items()
                 ]
-            )
-            shutil.rmtree(temp_dir.parent)
+                yield 'Images', len(tasks)
+                for t in asyncio.as_completed(tasks):
+                    await t
+                    yield 'Images', len(tasks)
+
+                yield 'Packing', None
+                output_name = f"{getLegalPath(data_json['title'])}_new.epub"
+                temp_dir = temp_dir / 'build'
+                await asyncio.to_thread(
+                    zip_epub, target_dir / output_name,
+                    [
+                        f for f in temp_dir.glob('**/*') 
+                        if f.is_file()
+                    ]
+                )
+            except:
+                shutil.rmtree(temp_dir)
+                raise
+            finally:    
+                shutil.rmtree(temp_dir)
 
         elif not viewer_html and viewer_url.path.startswith('/sc/view_novel'):
             url = list(urlsplit(str(viewer_url)))
@@ -850,35 +863,40 @@ class RentaJapanClient:
             temp_dir = target_dir / 'temp'
             temp_dir.mkdir(parents=True, exist_ok=True)
                 
-            yield 'Generate', None
-            builder = ENovelEpubBuilder(
-                main_json[0]['title'], main_json[0]['message'][1]['str'].split('<br><br>')[1]
-            )
-            img_mapping: dict[str, Path] = await builder.build(main_json, temp_dir)
+            try:
+                yield 'Generate', None
+                builder = ENovelEpubBuilder(
+                    main_json[0]['title'], main_json[0]['message'][1]['str'].split('<br><br>')[1]
+                )
+                img_mapping: dict[str, Path] = await builder.build(main_json, temp_dir)
 
-            yield 'Download', None
-            tasks = [
-                asyncio.create_task(
-                    simple_download(base_url + f'/id/{name}', fpath)
-                ) 
-                for name, fpath in img_mapping.items()
-            ]
-            yield 'Download', len(tasks)
-            for t in asyncio.as_completed(tasks):
-                await t
-                yield 'Download', len(tasks)
-
-            yield 'Packing', None
-            output_name = f"{getLegalPath(main_json[0]['title'])}.epub"
-            temp_dir = temp_dir / 'build'
-            await asyncio.to_thread(
-                zip_epub, target_dir / output_name,
-                [
-                    f for f in temp_dir.glob('**/*') 
-                    if f.is_file()
+                yield 'Download', None
+                tasks = [
+                    asyncio.create_task(
+                        simple_download(base_url + f'/id/{name}', fpath)
+                    ) 
+                    for name, fpath in img_mapping.items()
                 ]
-            )
-            shutil.rmtree(temp_dir.parent)
+                yield 'Download', len(tasks)
+                for t in asyncio.as_completed(tasks):
+                    await t
+                    yield 'Download', len(tasks)
+
+                yield 'Packing', None
+                output_name = f"{getLegalPath(main_json[0]['title'])}.epub"
+                temp_dir = temp_dir / 'build'
+                await asyncio.to_thread(
+                    zip_epub, target_dir / output_name,
+                    [
+                        f for f in temp_dir.glob('**/*') 
+                        if f.is_file()
+                    ]
+                )
+            except:
+                shutil.rmtree(temp_dir)
+                raise
+            finally:    
+                shutil.rmtree(temp_dir)
 
         elif viewer_url.path.startswith('/sc/view_'):
             return
@@ -1029,12 +1047,17 @@ if __name__ == "__main__":
                         viewer_url, output, allow_descramble=descramble, progress=progress, epub2_redirect=legacy_web
                     ):
                         task = progress._tasks[task_id]
+                        if total is None:
+                            task.completed = 0
+
                         if task.description != desc:
                             task.description = desc
+
                         if task.total != total:
                             task.total = total
                         elif task.total is not None:
                             progress.advance(task_id)
+                        
                     if progress._tasks[task_id].description != 'Starting':
                         console.print(f'[green]Downloaded {prd.prd_name}[/green]')
                     else:
