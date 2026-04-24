@@ -282,7 +282,11 @@ class RentaTaiwanAppAuth(httpx.Auth):
         )
     
     async def update_tokens(self, response: httpx.Response):
-        self.token = json.loads(await response.aread())['accessToken']
+        if response.status_code == 200:
+            self.token = json.loads(await response.aread())['accessToken']
+        elif response.status_code == 401:
+            RentaTaiwanClient.MOBILE_APP_TOKEN_CACHE.unlink(True)
+        response.raise_for_status()
     
 
 class RentaTaiwanClient:
