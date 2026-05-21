@@ -86,7 +86,7 @@ class RentaTaiwanAWSXHR:
 	siori: str
 
 @dataclass
-class RentaTaiwanTitleInfo:
+class RentaTaiwanTitleInfoObsoleted:
     sid: int
     sname: str
     author: str
@@ -153,6 +153,7 @@ class RentaTaiwanDiscountTitle:
     buy_plan: Price
     buy_all_plan: Price
     rentalInfo: RentalInfo
+    status: int = 2
 
     def __post_init__(self):
         for field in fields(self):
@@ -246,6 +247,142 @@ class RentaTaiwanAppSeriesRecord:
             for i in range(len(self.titles)):
                 self.titles[i] = self.Title(**self.titles[i])
 
+@dataclass
+class RentaTaiwanTitleList2:
+
+    @dataclass
+    class ItemTitle:
+        name: str
+        detail: str
+        vol_no: str
+        id: int
+        sample: str
+        price_buy: int
+        price_48h: int
+        sale_price_buy: int
+        sale_price_48h: int
+        provide_free_reading: bool
+        page: int
+        duration: int
+        type_id: int
+        status: str
+        brief_name: str
+        supplier_title_id: str
+        name_alias: str
+        start: str
+        is_free: bool
+        is_vip_free: bool
+
+        def __post_init__(self):
+            for field in fields(self):
+                value = getattr(self, field.name)
+                if isinstance(value, list):
+                    if len(value) > 1:
+                        value = value[1]
+                    else:
+                        setattr(self, field.name, None)
+                        continue
+                target_type = field.type
+                
+                if not isinstance(value, target_type):
+                    try:
+                        setattr(self, field.name, target_type(value))
+                    except (ValueError, TypeError):
+                        raise
+                else:
+                    setattr(self, field.name, value)
+
+    sid: str
+    itemTitles: list[ItemTitle]
+    category_name: str
+    category_group: str
+    quantifier: str
+    useUnifiedPriceMethod: bool
+    isUserVip: bool
+    dailyUnlockData: str
+    isLoggedIn: bool
+
+    def __post_init__(self):
+        for field in fields(self):
+            value = getattr(self, field.name)[1]
+            if field.name == "itemTitles":
+                for i in range(len(value)):
+                    value[i] = self.ItemTitle(**value[i][1])
+                setattr(self, field.name, value)
+            else:
+                target_type = field.type
+                
+                if not isinstance(value, target_type):
+                    try:
+                        setattr(self, field.name, target_type(value))
+                    except (ValueError, TypeError):
+                        raise
+                else:
+                    setattr(self, field.name, value)
+
+@dataclass
+class RentaTaiwanTitleInfo:
+    isLoggedIn: bool
+    titlesCount: int
+    slot: str
+    comment_count: str
+    star: float
+    category_name: str
+    category_group: str
+    author: list[str]
+    name: str
+    name_alias: str
+    latest_published_vol: int
+    latest_published_brief_name: str
+    instalment_status: str
+    tid: str
+    sid: str
+    brand_name: str
+    tags: list[str]
+    noCommentFlag: bool
+    sample: str
+    isCollected: bool
+    isBeforePublish: bool
+    quantifier: str
+    titleBriefName: int
+    titleVolNo: str
+    titleDetail: int
+    next_update_date: int
+    page: int
+    duration: int
+    dailyUnlockData: str
+    isBoxset: bool
+    categoryId: int
+    volumeIds: list[str]
+    isRemovedOrChanged: bool
+    isGiftSeries: bool
+    is_adult: str
+    type_id: int
+
+    def __post_init__(self):
+        for field in fields(self):
+            value = getattr(self, field.name)
+            if isinstance(value, list):
+                value = value[1] if len(value) > 1 else None
+                if value is None: 
+                    setattr(self, field.name, value)
+                    continue
+            target_type = field.type
+
+            if str(target_type).startswith('list'):
+                for i in range(len(value)):
+                    value[i] = value[i][1]
+                setattr(self, field.name, value)
+            else:
+                if not isinstance(value, target_type):
+                    try:
+                        setattr(self, field.name, target_type(value))
+                    except (ValueError, TypeError):
+                        raise
+                else:
+                    setattr(self, field.name, value)
+
+
 class RentaTaiwanAppAuth(httpx.Auth):
     def __init__(self, token: str, refresh_token: str, user_agent: str = "Dart/3.7 (dart:io)", app_version: int = 74):
         self.token = token
@@ -286,8 +423,6 @@ class RentaTaiwanAppAuth(httpx.Auth):
             self.token = json.loads(await response.aread())['accessToken']
         elif response.status_code == 401:
             RentaTaiwanClient.MOBILE_APP_TOKEN_CACHE.unlink(True)
-        response.raise_for_status()
-    
 
 class RentaTaiwanClient:
     WEB_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
@@ -682,23 +817,34 @@ class RentaTaiwanClient:
             else:
                 target_file.rename(target_file.with_suffix('.zip'))
 
-    async def get_title_list(self, sid: str | int) -> list[RentaTaiwanTitleInfo]:
+    async def get_title_list(self, sid: str | int) -> tuple[
+        RentaTaiwanTitleInfo,
+        list[RentaTaiwanTitleList2.ItemTitle], 
+        dict[str, RentaTaiwanDiscountTitle]
+    ]:
         res = await self.client.get(f'https://tw.myrenta.com/item/{sid}')
         res.raise_for_status()
         
-        titleInfos_block = re.search(r'<script type="text/javascript">.*?var titleInfos=\[(.+?)\];', res.text)
-        if not titleInfos_block:
-            return
-        
-        titleInfos: list[RentaTaiwanTitleInfo] = []
-        for product in re.findall(r'({.+?})[,$]', titleInfos_block.group(1)):
-            titleInfo = dict()
-            for item in re.findall(r'(".+?":(?:"(?:.*?)"|(?:.+?)))[,}]', product):
-                titleInfo.update(json.loads('{' + item + '}'))
-        
-            titleInfos.append(RentaTaiwanTitleInfo(**titleInfo))
+        soup = BeautifulSoup(res.text, 'lxml')
 
-        return titleInfos
+        series_info = None
+        title_list = None
+
+        data_price = soup.select('div[id="price-place"]')[0]['data-price-result']
+        for astro_island in soup.select('astro-island[component-export="default"]'):
+            if (opts := astro_island.get('opts')):
+                name = json.loads(opts)['name']
+                if name == 'TitleAndInfo':
+                    series_info = astro_island['props']
+                elif name == 'TitleList2':
+                    title_list = astro_island['props']
+
+        if not series_info or not title_list:
+            return None, None, None
+
+        return RentaTaiwanTitleInfo(**json.loads(series_info)), \
+            RentaTaiwanTitleList2(**json.loads(title_list)).itemTitles, \
+            {item['title_id']: RentaTaiwanDiscountTitle(**item) for item in json.loads(data_price)['data']}
     
     async def get_title_list_mobile(self, sid: str | int) -> RentaTaiwanAppSeriesRecord:
         headers = self.client.headers.copy()
@@ -858,44 +1004,30 @@ if __name__ == "__main__":
             load_config()
             client = RentaTaiwanClient(cookies=COOKIE_CACHE, proxy=global_config.get('proxy_web'))
 
-            res = await client.get_title_list(series_id)
+            info, res, discount = await client.get_title_list(series_id)
             if not res:
                 console.print(f'[red]ERROR: BAD SeriesID {series_id}[/red]')
                 return
-            
-            discount = await client.get_series_discount(series_id)
 
             table = Table(
-                "NO.", "TID", "Title", "Region", "Price",
-                title=res[0].sname,
+                "NO.", "TID", "Title", "Price",
+                title=f"{info.name} ({info.instalment_status})\n{','.join(info.author)}",
                 show_lines=True,
                 caption='[green]Green[/green]: Bought\n[yellow]Yellow[/yellow]: Free'
             )
             for prd in res:
-                if prd.tid not in discount:
-                    discount[prd.tid] = RentaTaiwanDiscountTitle(
-                        prd.tid,
-                        prd.sid,
-                        prd.vol,
-                        False,
-                        RentaTaiwanDiscountTitle.Price(prd.price_48h, prd.price_48h),
-                        RentaTaiwanDiscountTitle.Price(prd.price_buy - prd.price_48h, prd.price_buy - prd.price_48h),
-                        RentaTaiwanDiscountTitle.Price(prd.price_buy, prd.price_buy),
-                        RentaTaiwanDiscountTitle.Price(prd.price_buy, prd.price_buy),
-                        RentaTaiwanDiscountTitle.RentalInfo(0)
-                    )
-                buy_plan = discount[prd.tid].buy_plan
-                rent_plan = discount[prd.tid].rental_plan
+                buy_plan = discount[prd.id].buy_plan
+                rent_plan = discount[prd.id].rental_plan
                 table.add_row(
-                    str(prd.vol), str(prd.tid), prd.tname, prd.sales_region, 
-                    f"{buy_plan.final_price * 10} TWD\n"
-                    f"{(str(rent_plan.final_price * 10) + ' TWD') if rent_plan.final_price >= 0 else 'NoRent'}",
+                    str(prd.vol_no), str(prd.id), prd.name, 
+                    f"TWD {buy_plan.final_price * 10}\n"
+                    f"TWD {str(rent_plan.final_price * 10) if rent_plan.final_price >= 0 else 'NoRent'}",
                     style={
                         3: 'bold green',
                         2: 'green',
                         1: 'green',
                         0: ''
-                    }[discount[prd.tid].rentalInfo.status] or 'yellow' if (buy_plan.final_price == 0 or rent_plan.final_price == 0) else ''
+                    }[discount[prd.id].rentalInfo.status] or 'yellow' if (buy_plan.final_price == 0 or rent_plan.final_price == 0) else ''
                 )
             console.print(table)
             save_cookies(client.client.cookies.jar)
@@ -933,13 +1065,12 @@ if __name__ == "__main__":
                 console.print('[red]Login required[/red]')
                 return
             
-            res = await client.get_title_list(series_id)
+            info, res, discount = await client.get_title_list(series_id)
             if not res:
                 console.print(f'[red]ERROR: BAD SeriesID {series_id}[/red]')
                 return
-            
-            discount = await client.get_series_discount(series_id)
 
+            console.print(f'[yellow]Download Series [bold]{info.name}[/bold][/yellow]')
             with Progress(
                 TextColumn("[progress.description]{task.description}"),
                 BarColumn(),
@@ -949,10 +1080,10 @@ if __name__ == "__main__":
             ) as progress:
                 total_task = progress.add_task('Total', total=len(res))
                 for prd in res:
-                    if prd.price_buy == 0 or prd.price_48h == 0 or (prd.tid in discount and discount[prd.tid].rentalInfo.status != 0):
-                        await client.download_web(prd.tid, output, prd.tname, progress=progress)
+                    if prd.price_buy == 0 or prd.price_48h == 0 or (prd.id in discount and discount[prd.id].rentalInfo.status != 0):
+                        await client.download_web(prd.id, output, prd.name, progress=progress)
                     else:
-                        console.print(f'[yellow]SKIP Unrented / Non-free [bold]{prd.tname}[/bold][/yellow]')
+                        console.print(f'[yellow]SKIP Unrented / Non-free [bold]{prd.name}[/bold][/yellow]')
                     progress.advance(total_task)
             save_cookies(client.client.cookies.jar)
         
